@@ -1,0 +1,1 @@
+vless://UUID@SERVER_IP:443?encryption=none&security=reality&type=tcp&sni=SERVER_NAME&pbk=PUBLIC_KEY&sid=SHORT_ID&flow=xtls-rprx-vision&fp=chrome

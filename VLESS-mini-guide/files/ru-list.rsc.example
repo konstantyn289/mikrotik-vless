@@ -1,0 +1,2 @@
+# Адреса, которые идут мимо VPN. Файл читается раз в неделю. Держи его маленьким: на флеше мало места.
+:do { /ip firewall address-list add list=ru address=77.88.8.8 comment=ru-static } on-error={}

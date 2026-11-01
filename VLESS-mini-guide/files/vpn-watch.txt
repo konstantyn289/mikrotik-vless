@@ -1,0 +1,59 @@
+:global vpnBusy
+:global vpnFail
+:global vpnIdx
+:global vpnTried
+:global vpnPause
+:if ([:typeof $vpnFail] = "nothing") do={ :set vpnFail 0; :set vpnIdx 0; :set vpnTried 0; :set vpnPause 0; :set vpnBusy 0 }
+:if ($vpnBusy = 0) do={
+  :set vpnBusy 1
+  :local ok false
+  :do {
+    :local r [/tool fetch url="https://1.0.0.1/cdn-cgi/trace" check-certificate=no output=user as-value idle-timeout=8s]
+    :local d ($r->"data")
+    :if (([:typeof [:find $d "loc="]] = "num") && ([:typeof [:find $d "loc=RU"]] != "num")) do={ :set ok true }
+  } on-error={}
+  :local rule [/ip firewall nat find comment=vpn-socksify]
+  :if ($ok) do={
+    :set vpnFail 0
+    :set vpnTried 0
+    :if ([/ip firewall nat get $rule disabled]) do={ /ip firewall nat enable $rule; /ip dns set use-doh-server="https://1.1.1.1/dns-query" verify-doh-cert=yes; /ip dns cache flush; :log warning "vpn-watch: VPN is back" }
+  } else={
+    :set vpnFail ($vpnFail + 1)
+    :if ($vpnPause > 0) do={ :set vpnPause ($vpnPause - 1) }
+    :if (($vpnFail >= 3) && ($vpnPause = 0)) do={
+      :set vpnFail 0
+      :local f "flash/vcfg/servers.txt"
+      :local d ([/file read file=$f offset=0 chunk-size=16000 as-value]->"data")
+      :local lines [:toarray ""]
+      :local p 0
+      :local e [:find $d "\
+" -1]
+      :while ([:typeof $e] = "num") do={
+        :set lines ($lines , [:pick $d $p $e])
+        :set p ($e + 1)
+        :set e [:find $d "\
+" $e]
+      }
+      :local n [:len $lines]
+      :if ($vpnTried >= $n) do={
+        :set vpnTried 0
+        :set vpnPause 30
+        /ip firewall nat disable $rule
+        /ip dns set use-doh-server="" verify-doh-cert=no
+        :log error "vpn-watch: all servers failed, direct internet for 10 min"
+      } else={
+        :set vpnIdx (($vpnIdx + 1) % $n)
+        :set vpnTried ($vpnTried + 1)
+        /file set flash/vcfg/connection.uri contents=(($lines->$vpnIdx) . "\
+")
+        :log warning ("vpn-watch: switching to server " . $vpnIdx)
+        :local c [/container find name=vless]
+        :do { /container stop $c } on-error={}
+        :delay 5s
+        :do { /container start $c } on-error={}
+        :delay 5s
+      }
+    }
+  }
+  :set vpnBusy 0
+}
